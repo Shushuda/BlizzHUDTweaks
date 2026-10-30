@@ -250,6 +250,38 @@ local function setMouseoverCache(frameName, value, now)
   return value
 end
 
+-- Midnight: IsMouseOver, IsShown and GetChildren can return secret values
+-- (e.g. for frames anchored to something secret). Testing a secret is a Lua
+-- error, so a secret answer counts as "not over".
+local function isSecret(value)
+  return issecretvalue and issecretvalue(value)
+end
+
+local function isMouseOverSafe(frame)
+  local isMouseOver = frame:IsMouseOver()
+  return not isSecret(isMouseOver) and isMouseOver
+end
+
+local function isMouseOverAnyChild(...)
+  for i = 1, select("#", ...) do
+    local child = select(i, ...)
+    if not isSecret(child) then
+      local isShown = child:IsShown()
+      if not isSecret(isShown) and isShown and isMouseOverSafe(child) then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+-- Frames of other addons can be smaller than their content, e.g. Bartender4
+-- bars are 1x1 px and only their buttons have the real size, so the shown
+-- children count as well.
+local function isMouseOverIncludingChildren(frame)
+  return isMouseOverSafe(frame) or isMouseOverAnyChild(frame:GetChildren())
+end
+
 local function determineMouseOver(profile, frameName, frameOptions)
   local now = GetTime()
   local entry = mouseoverCache[frameName]
@@ -260,7 +292,7 @@ local function determineMouseOver(profile, frameName, frameOptions)
   local mapping = addon:GetFrameMapping()
   local linkedFrames = profile[linkedFramesKeys[frameName]]
   local mainFrame = frameOptions.mainFrame
-  local fallback = mainFrame.__BlizzHUDTweaksForceMouseover or mainFrame:IsMouseOver()
+  local fallback = mainFrame.__BlizzHUDTweaksForceMouseover or isMouseOverIncludingChildren(mainFrame)
     or (frameOptions.isMouseover and frameOptions.isMouseover(frameOptions))
 
   if fallback then
@@ -301,7 +333,7 @@ local function determineMouseOver(profile, frameName, frameOptions)
       local frameProfile = profile[linkedFrameName]
       if frameProfile and frameProfile.Enabled then
         local linkedFrame = mapping[linkedFrameName]
-        if linkedFrame and linkedFrame.mainFrame and linkedFrame.mainFrame:IsMouseOver() then
+        if linkedFrame and linkedFrame.mainFrame and isMouseOverIncludingChildren(linkedFrame.mainFrame) then
           hasMouseover = true
           break
         end
